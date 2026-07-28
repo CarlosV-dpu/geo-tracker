@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  DRIVER
+  PASSENGER
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(PASSENGER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  routes    Route[]
+}
+
+model Route {
+  id          String            @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean           @default(true)
+  driverId    String?
+  driver      User?             @relation(fields: [driverId], references: [id])
+  positions   VehiclePosition[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model VehiclePosition {
+  id        String   @id @default(uuid())
+  routeId   String
+  route     Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  lat       Float
+  lng       Float
+  speed     Float    @default(0)
+  timestamp DateTime @default(now())
+
+  @@index([routeId, timestamp])
+}
