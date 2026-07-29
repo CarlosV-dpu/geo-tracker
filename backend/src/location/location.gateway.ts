@@ -36,16 +36,19 @@ export class LocationGateway {
   ) {
     const { routeId, lat, lng, speed = 0 } = payload;
 
-
     const newPosition = await this.prisma.vehiclePosition.create({
       data: {
-        routeId,
-        lat,
-        lng,
-        speed,
-      },
-    });
-
+        route: {
+          connectOrCreate: {
+            where: { id: routeId },
+            create: { id: routeId, name: 'Ruta de Prueba' },
+          },
+        },
+      lat,
+      lng,
+      speed,
+    },
+  });
     
     this.server.to(`route_${routeId}`).emit('locationUpdated', newPosition);
 
