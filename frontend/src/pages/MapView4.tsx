@@ -2,14 +2,21 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-
-const socket = io('http://localhost:3000');
+import { useAuth } from '../context/AuthContext'; // 👈 1. Importamos el contexto de autenticación
 
 interface Position {
   lat: number;
   lng: number;
   speed: number;
   timestamp?: string;
+}
+
+interface RouteSegment {
+  id: string;
+  coords: [number, number][];
+  color: string;
+  opacity: number;
+  width: number;
 }
 
 const calculateTotalDistance = (coords: [number, number][]): number => {
@@ -34,6 +41,7 @@ const calculateTotalDistance = (coords: [number, number][]): number => {
 };
 
 export const MapView = () => {
+  const { token, user, logout } = useAuth(); // 👈 2. Obtenemos el token JWT y los datos del usuario
   const routeId = 'ruta-1';
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -45,11 +53,20 @@ export const MapView = () => {
     speed: 0,
   });
 
-  const [path, setPath] = useState<[number, number][]>([]);
+  const [historicRoutes, setHistoricRoutes] = useState<[number, number][][]>([]);
+  const [activePath, setActivePath] = useState<[number, number][]>([]);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('--:--:--');
 
-  const totalDistance = useMemo(() => calculateTotalDistance(path), [path]);
+  const totalDistance = useMemo(() => {
+    const allCoords = [...historicRoutes.flat(), ...activePath];
+    return calculateTotalDistance(allCoords);
+  }, [historicRoutes, activePath]);
+
+  const totalPointsCount = useMemo(() => {
+    const historicCount = historicRoutes.reduce((acc, r) => acc + r.length, 0);
+    return historicCount + activePath.length;
+  }, [historicRoutes, activePath]);
 
   // 1. Inicialización del Mapa MapLibre GL
   useEffect(() => {
@@ -59,17 +76,14 @@ export const MapView = () => {
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      // Estilo vectorial público (Puedes cambiarlo después por MapTiler para un diseño oscuro o claro custom)
       style: `https://api.maptiler.com/maps/streets-v4/style.json?key=${apiKey}`,
-      center: [-74.78132, 10.96854], // Longitud, Latitud (Ojo: MapLibre usa [LNG, LAT])
+      center: [-74.78132, 10.96854],
       zoom: 15,
     });
 
-    // 🛠️ FIX: Manejar íconos faltantes del estilo para limpiar la consola
     map.current.on('styleimagemissing', (e) => {
       const id = e.id;
       if (map.current && !map.current.hasImage(id)) {
-        // Creamos un píxel transparente de 1x1
         map.current.addImage(id, {
           width: 1,
           height: 1,
@@ -80,7 +94,6 @@ export const MapView = () => {
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // Crear marcador para el vehículo
     const el = document.createElement('div');
     el.className = 'pulse-marker';
     el.style.width = '20px';
@@ -91,55 +104,47 @@ export const MapView = () => {
       .addTo(map.current);
 
     map.current.on('load', () => {
-      // 1. Obtener el estilo del mapa
       const style = map.current?.getStyle();
-      if (!style || !style.layers) return;
+      if (style && style.layers) {
+        style.layers.forEach((layer) => {
+          const isTextLayer =
+            layer.type === 'symbol' &&
+            layer.layout &&
+            'text-field' in layer.layout;
 
-      // 2. Modificar TODAS las capas que rendericen texto (símbolos con text-field)
-      style.layers.forEach((layer) => {
-        const isTextLayer =
-          layer.type === 'symbol' &&
-          layer.layout &&
-          'text-field' in layer.layout;
+          if (isTextLayer) {
+            map.current?.setLayoutProperty(layer.id, 'text-size', [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10, 24,
+              14, 16,
+              17, 16
+            ]);
+          }
+        });
+      }
 
-        if (isTextLayer) {
-          // 3. Aplicar una escala de tamaño legible y clara según el nivel de zoom
-          map.current?.setLayoutProperty(layer.id, 'text-size', [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            10, 48, // A zoom alejado (10) -> fuente de 16px
-            14, 48, // A zoom medio (14)   -> fuente de 24px
-            17, 68  // A zoom cercano (17) -> fuente de 34px
-          ]);
-        }
-      });
-
-      // Capa GeoJSON para la línea del recorrido
-      map.current?.addSource('route', {
+      map.current?.addSource('routes-source', {
         type: 'geojson',
         data: {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [],
-          },
+          type: 'FeatureCollection',
+          features: [],
         },
       });
 
       map.current?.addLayer({
-        id: 'route-layer',
+        id: 'routes-layer',
         type: 'line',
-        source: 'route',
+        source: 'routes-source',
         layout: {
           'line-join': 'round',
           'line-cap': 'round',
         },
         paint: {
-          'line-color': '#2563eb',
-          'line-width': 6,
-          'line-opacity': 0.85,
+          'line-color': ['get', 'color'],
+          'line-width': ['get', 'width'],
+          'line-opacity': ['get', 'opacity'],
         },
       });
     });
@@ -150,19 +155,31 @@ export const MapView = () => {
     };
   }, []);
 
-  // 2. Conexión WebSockets e Historial
+  // 2. Carga de Historial Autenticado y Conexión WebSocket Segura
   useEffect(() => {
-    fetch(`http://localhost:3000/location/history/${routeId}`)
+    if (!token) return;
+
+    // A. Cargar historial enviando Header de Autenticación
+    fetch(`http://localhost:3000/location/history/${routeId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then((res) => res.json())
       .then((data: Position[]) => {
         if (data && data.length > 0) {
           const coords: [number, number][] = data.map((p) => [p.lat, p.lng]);
-          setPath(coords);
+          setHistoricRoutes([coords]);
           const latest = data[data.length - 1];
           setPosition(latest);
         }
       })
       .catch((err) => console.error('Error al cargar historial previo:', err));
+
+    // B. Conectar Socket.IO pasando el JWT en el Handshake Auth
+    const socket = io('http://localhost:3000', {
+      auth: { token },
+    });
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
@@ -171,7 +188,7 @@ export const MapView = () => {
 
     socket.on('locationUpdated', (data: Position) => {
       setPosition(data);
-      setPath((prevPath) => [...prevPath, [data.lat, data.lng]]);
+      setActivePath((prev) => [...prev, [data.lat, data.lng]]);
       setLastUpdatedTime(new Date().toLocaleTimeString());
     });
 
@@ -179,46 +196,70 @@ export const MapView = () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('locationUpdated');
+      socket.disconnect();
     };
-  }, []);
+  }, [token]);
 
-  // 3. Actualizar la posición del vehículo y la línea en MapLibre
+  // 3. Renderizar y actualizar todas las rutas en MapLibre
   useEffect(() => {
     if (!map.current) return;
 
-    // Mover el marcador a la nueva posición
     marker.current?.setLngLat([position.lng, position.lat]);
-
-    // Centrar mapa suavemente
     map.current.easeTo({ center: [position.lng, position.lat], duration: 1000 });
 
-    // Actualizar la trazada de la ruta
-    const geojsonSource = map.current.getSource('route') as maplibregl.GeoJSONSource;
-    if (geojsonSource && path.length > 0) {
-      // MapLibre requiere [LNG, LAT]
-      const formattedCoords = path.map(([lat, lng]) => [lng, lat]);
-      geojsonSource.setData({
+    const source = map.current.getSource('routes-source') as maplibregl.GeoJSONSource;
+    if (!source) return;
+
+    const features: maplibregl.GeoJSONFeature[] = [];
+
+    historicRoutes.forEach((routeCoords, index) => {
+      if (routeCoords.length < 2) return;
+      features.push({
         type: 'Feature',
-        properties: {},
+        properties: {
+          color: index === historicRoutes.length - 1 ? '#475569' : '#1e293b', 
+          opacity: 0.6,
+          width: 4,
+        },
         geometry: {
           type: 'LineString',
-          coordinates: formattedCoords,
+          coordinates: routeCoords.map(([lat, lng]) => [lng, lat]),
         },
-      });
+      } as unknown as maplibregl.GeoJSONFeature);
+    });
+
+    if (activePath.length > 1) {
+      features.push({
+        type: 'Feature',
+        properties: {
+          color: '#2563eb',
+          opacity: 0.95,
+          width: 6,
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: activePath.map(([lat, lng]) => [lng, lat]),
+        },
+      } as unknown as maplibregl.GeoJSONFeature);
     }
-  }, [position, path]);
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: features as unknown as GeoJSON.Feature[],
+    });
+  }, [position, historicRoutes, activePath]);
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', height: '100vh', width: '120vw', overflow: 'hidden' }}>
 
       {/* PANEL SUPERIOR */}
       <div
         className="glass-panel"
         style={{
           position: 'absolute',
-          top: '130px',
-          left: '50%',
-          transform: 'translateX(-50%) scale(3.5)',
+          top: '15px',
+          left: '44%',
+          transform: 'translateX(-50%) scale(1.0)',
           zIndex: 10,
           padding: '12px 24px',
           display: 'flex',
@@ -247,6 +288,31 @@ export const MapView = () => {
             {isConnected ? 'ONLINE' : 'OFFLINE'}
           </span>
         </div>
+
+        {/* 👈 3. Bloque de perfil y botón de salida integrado en la barra */}
+        <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffffff', display: 'block', lineHeight: '1.2' }}>{user?.name}</span>
+            <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: '600' }}>{user?.role}</span>
+          </div>
+          <button
+            onClick={logout}
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              color: '#f87171',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+            }}
+          >
+            Salir
+          </button>
+        </div>
       </div>
 
       {/* PANEL INFERIOR DE TELEMETRÍA */}
@@ -254,9 +320,10 @@ export const MapView = () => {
         className="glass-panel"
         style={{
           position: 'absolute',
-          bottom: '160px',
-          left: '50%',
-          transform: 'translateX(-50%) scale(4.0)',
+          bottom: '20px',
+          left: '43%',
+          transform: 'translateX(-50%) scale(1.2)',
+          width: 700,
           zIndex: 10,
           padding: '16px 28px',
           display: 'flex',
@@ -267,13 +334,13 @@ export const MapView = () => {
           background: 'rgba(15, 23, 42, 0.92)'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div>
-            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Vehículo</span>
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ width: '130px'}}>
+            <span style={{ top: '100px', fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block', textAlign: 'center' }}>Vehículo</span>
             <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#ffffff' }}>Unidad V-01</span>
           </div>
           <div style={{ height: '36px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
-          <div>
+          <div style={{width: '70px'}}>
             <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Velocidad</span>
             <span style={{ fontSize: '32px', fontWeight: '900', fontFamily: 'monospace', color: '#60a5fa', lineHeight: '1' }}>
               {position.speed} <span style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8' }}>km/h</span>
@@ -283,33 +350,33 @@ export const MapView = () => {
 
         <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        <div style={{ display: 'flex', gap: '20px', fontFamily: 'monospace' }}>
+        <div style={{width: '120px', display: 'flex', gap: '20px', fontFamily: 'monospace' }}>
           <div>
             <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block', fontFamily: 'sans-serif' }}>Distancia Traza</span>
             <span style={{ fontSize: '16px', fontWeight: '800', color: '#ffffff' }}>{totalDistance.toFixed(2)} <span style={{ fontSize: '11px', color: '#94a3b8' }}>km</span></span>
           </div>
           <div>
             <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block', fontFamily: 'sans-serif' }}>Puntos Recibidos</span>
-            <span style={{ fontSize: '16px', fontWeight: '800', color: '#ffffff' }}>{path.length}</span>
+            <span style={{ fontSize: '16px', fontWeight: '800', color: '#ffffff' }}>{totalPointsCount}</span>
           </div>
         </div>
 
         <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#f1f5f9', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#f1f5f9', display: 'flex', flexDirection: 'column', gap: '2px', width: '50px' }}>
           <div><span style={{ color: '#64748b', fontWeight: 'bold' }}>LAT:</span> {position.lat.toFixed(5)}</div>
           <div><span style={{ color: '#64748b', fontWeight: 'bold' }}>LNG:</span> {position.lng.toFixed(5)}</div>
         </div>
 
         <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+        <div style={{ textAlign: 'right', fontFamily: 'monospace', width: '70px'  }}>
           <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block', fontFamily: 'sans-serif' }}>Último Paquete</span>
           <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#38bdf8' }}>{lastUpdatedTime}</span>
         </div>
       </div>
 
-      {/* CONTENEDOR DEL MAPA VECORiAL */}
+      {/* CONTENEDOR DEL MAPA VECTORIAL */}
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 
     </div>

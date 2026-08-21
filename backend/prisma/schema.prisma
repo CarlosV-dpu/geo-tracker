@@ -9,15 +9,17 @@ datasource db {
 enum Role {
   ADMIN
   DRIVER
-  PASSENGER
+  ROOT
+  OTHER
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        Int      @id @default(autoincrement())
+  cedula    String   @unique
   email     String   @unique
   password  String
   name      String
-  role      Role     @default(PASSENGER)
+  role      Role     @default(DRIVER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   routes    Route[]
@@ -28,7 +30,7 @@ model Route {
   name        String
   description String?
   isActive    Boolean           @default(true)
-  driverId    String?
+  driverId    Int?
   driver      User?             @relation(fields: [driverId], references: [id])
   positions   VehiclePosition[]
   createdAt   DateTime          @default(now())
