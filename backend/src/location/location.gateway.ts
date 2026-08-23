@@ -69,7 +69,15 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   // 4. Transmitir ubicación (Protegido solo para DRIVER y ROOT)
   @SubscribeMessage('updateLocation')
   async handleUpdateLocation(
-    @MessageBody() payload: { routeId: string; lat: number; lng: number; speed?: number },
+    @MessageBody() payload: { 
+      identity: string;
+      name: string;
+      description: string;
+      driverId: number;
+      lat: number;
+      lng: number;
+      speed?: number
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const user = client.data.user;
@@ -82,14 +90,26 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       };
     }
 
-    const { routeId, lat, lng, speed = 0 } = payload;
+    const { identity, name, description, driverId, lat, lng, speed = 0 } = payload;
 
     const newPosition = await this.prisma.vehiclePosition.create({
       data: {
         route: {
           connectOrCreate: {
-            where: { id: routeId },
-            create: { id: routeId, name: 'Ruta de Prueba' },
+            where: { 
+              identity_name: {
+                identity: identity,
+                name: name
+              }
+            },
+            create: { 
+              identity: identity,
+              name: name ||'Ruta de Prueba',
+              description: description || 'Cargamento de ropa',
+              driver: {
+                connect: { id: Number(driverId)},
+              },
+            },
           },
         },
         lat,
@@ -99,8 +119,37 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
 
     // Emitir la nueva posición a todos los escuchas (ADMINs / Supervisores) en esa sala
-    this.server.to(`route_${routeId}`).emit('locationUpdated', newPosition);
+    this.server.to(`route_${identity}`).emit('locationUpdated', newPosition);
 
     return { status: 'success', data: newPosition };
   }
+
+  // Agrega este método dentro de location.gateway.ts
+@SubscribeMessage('finishRoute')
+async handleFinishRoute(
+  @MessageBody() payload: { identity: string; name?: string },
+) {
+  const identity = payload.identity;
+  const name = payload.name || 'Ruta 1'; // Fallback por seguridad
+
+  if (!identity) {
+    return { status: 'error', message: 'Se requiere identity para finalizar la ruta.' };
+  }
+
+  // Actualización utilizando la clave compuesta sin tocar la base de datos
+  const updatedRoute = await this.prisma.route.update({
+    where: { 
+      identity_name: {
+        identity: identity,
+        name: name,
+      },
+    },
+    data: { isActive: false },
+  });
+
+  // Notificar a los clientes conectados a la sala de la ruta
+  this.server.to(`route_${identity}`).emit('routeFinished', updatedRoute);
+
+  return { status: 'success', data: updatedRoute };
+}
 }
