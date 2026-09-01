@@ -1,25 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
-import L from 'leaflet';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-
-const startIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [32, 52],
-  iconAnchor: [16, 52],
-});
-
-const livePulseIcon = L.divIcon({
-  className: 'pulse-marker-container',
-  html: `<div class="pulse-marker" style="width: 28px; height: 28px;"></div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
-
-const socket = io('http://localhost:3000');
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { useAuth } from '../context/AuthContext';
 
 interface Position {
+  identity?: string;
+  name?: string;
   lat: number;
   lng: number;
   speed: number;
@@ -38,26 +25,25 @@ const calculateTotalDistance = (coords: [number, number][]): number => {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     total += R * c;
   }
   return total;
 };
 
-const MapController = ({ center }: { center: [number, number] }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.invalidateSize();
-    map.setView(center, map.getZoom(), { animate: true });
-  }, [center, map]);
-  return null;
-};
-
 export const MapView = () => {
-  const routeId = 'ruta-1';
+  const { token, user, logout } = useAuth();
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<maplibregl.Map | null>(null);
+  const marker = useRef<maplibregl.Marker | null>(null);
+
+  const [activeRouteInfo, setActiveRouteInfo] = useState<{ identity: string; name: string }>({
+    identity: 'Esperando ruta...',
+    name: 'Sin ruta activa',
+  });
 
   const [position, setPosition] = useState<Position>({
     lat: 10.96854,
@@ -65,37 +51,109 @@ export const MapView = () => {
     speed: 0,
   });
 
-  const [lastStoredPosition, setLastStoredPosition] = useState<Position | null>(null);
-  const [path, setPath] = useState<[number, number][]>([]);
+  const [historicRoutes, setHistoricRoutes] = useState<[number, number][][]>([]);
+  const [activePath, setActivePath] = useState<[number, number][]>([]);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('--:--:--');
 
-  const totalDistance = useMemo(() => calculateTotalDistance(path), [path]);
+  const activeRouteInfoRef = useRef(activeRouteInfo);
+  activeRouteInfoRef.current = activeRouteInfo;
+
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const totalDistance = useMemo(() => {
+    const allCoords = [...historicRoutes.flat(), ...activePath];
+    return calculateTotalDistance(allCoords);
+  }, [historicRoutes, activePath]);
+
+  const totalPointsCount = useMemo(() => {
+    const historicCount = historicRoutes.reduce((acc, r) => acc + r.length, 0);
+    return historicCount + activePath.length;
+  }, [historicRoutes, activePath]);
 
   useEffect(() => {
-    fetch(`http://localhost:3000/location/history/${routeId}`)
-      .then((res) => res.json())
-      .then((data: Position[]) => {
-        if (data && data.length > 0) {
-          const coords: [number, number][] = data.map((p) => [p.lat, p.lng]);
-          setPath(coords);
+    if (map.current || !mapContainer.current) return;
 
-          const latest = data[data.length - 1];
-          setLastStoredPosition(latest);
+    const apiKey = import.meta.env.VITE_MAPTILER_API_KEY;
+
+    map.current = new maplibregl.Map({
+      container: mapContainer.current,
+      style: `https://api.maptiler.com/maps/streets-v4/style.json?key=${apiKey}`,
+      center: [-74.78132, 10.96854],
+      zoom: 15,
+    });
+
+    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    const el = document.createElement('div');
+    el.className = 'pulse-marker';
+    el.style.width = '20px';
+    el.style.height = '20px';
+
+    marker.current = new maplibregl.Marker({ element: el })
+      .setLngLat([-74.78132, 10.96854])
+      .addTo(map.current);
+
+    map.current.on('load', () => {
+      map.current?.addSource('routes-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.current?.addLayer({
+        id: 'routes-layer',
+        type: 'line',
+        source: 'routes-source',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['get', 'width'],
+          'line-opacity': ['get', 'opacity'],
+        },
+      });
+    });
+
+    return () => {
+      map.current?.remove();
+      map.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+
+    fetch(`http://localhost:3000/location/active`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((routeData) => {
+        if (routeData && routeData.positions && routeData.positions.length > 0) {
+          setActiveRouteInfo({ identity: routeData.identity, name: routeData.name });
+          const coords: [number, number][] = routeData.positions.map((p: any) => [p.lat, p.lng]);
+          setHistoricRoutes([coords]);
+          const latest = routeData.positions[routeData.positions.length - 1];
           setPosition(latest);
         }
       })
-      .catch((err) => console.error('Error al cargar historial previo:', err));
+      .catch((err) => console.error('Error al obtener la ruta activa:', err));
+
+    const socket = io('http://localhost:3000', { auth: { token } });
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    socket.emit('joinRoute', { routeId });
-
     socket.on('locationUpdated', (data: Position) => {
-      const newCoord: [number, number] = [data.lat, data.lng];
+      if (data.identity && data.identity !== activeRouteInfoRef.current.identity) {
+        setActiveRouteInfo({ identity: data.identity, name: data.name || 'Nueva Ruta' });
+        if (activePathRef.current.length > 0) {
+          setHistoricRoutes((prev) => [...prev, activePathRef.current]);
+          setActivePath([]);
+        }
+      }
+
       setPosition(data);
-      setPath((prevPath) => [...prevPath, newCoord]);
+      setActivePath((prev) => [...prev, [data.lat, data.lng]]);
       setLastUpdatedTime(new Date().toLocaleTimeString());
     });
 
@@ -103,170 +161,168 @@ export const MapView = () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('locationUpdated');
+      socket.disconnect();
     };
-  }, []);
+  }, [token]);
+
+  // Renderizado dinámico de rutas sobre el mapa
+  useEffect(() => {
+    if (!map.current) return;
+
+    marker.current?.setLngLat([position.lng, position.lat]);
+    map.current.easeTo({ center: [position.lng, position.lat], duration: 1000 });
+
+    const source = map.current.getSource('routes-source') as maplibregl.GeoJSONSource;
+    if (!source) return;
+
+    const features: maplibregl.GeoJSONFeature[] = [];
+    const totalHistoric = historicRoutes.length;
+
+    // Gradiente de tonos de azul para rutas históricas según antigüedad
+    const blueShades = ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe'];
+
+    historicRoutes.forEach((routeCoords, index) => {
+      if (routeCoords.length < 2) return;
+
+      // recencyIndex: 0 = Ruta inmediatamente anterior a la activa
+      const recencyIndex = totalHistoric - 1 - index;
+
+      // Asignación de color según recencia
+      const color = blueShades[recencyIndex] || '#e2e8f0';
+
+      // Opacidad decreciente (de 0.75 a un mínimo de 0.15)
+      const opacity = Math.max(0.15, 0.75 - recencyIndex * 0.15);
+
+      // Grosor decreciente (de 5px a un mínimo de 2px)
+      const width = Math.max(2, 5 - recencyIndex);
+
+      features.push({
+        type: 'Feature',
+        properties: { color, opacity, width },
+        geometry: {
+          type: 'LineString',
+          coordinates: routeCoords.map(([lat, lng]) => [lng, lat]),
+        },
+      } as unknown as maplibregl.GeoJSONFeature);
+    });
+
+    // Ruta Activa actual: Azul intenso brillante, opacidad completa y mayor grosor
+    if (activePath.length > 1) {
+      features.push({
+        type: 'Feature',
+        properties: { color: '#1d4ed8', opacity: 1.0, width: 6 },
+        geometry: {
+          type: 'LineString',
+          coordinates: activePath.map(([lat, lng]) => [lng, lat]),
+        },
+      } as unknown as maplibregl.GeoJSONFeature);
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: features as unknown as maplibregl.GeoJSONFeature[],
+    });
+  }, [position, historicRoutes, activePath]);
 
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      
-      {/* 1. ENCABEZADO SUPERIOR XL (BRANDING & ESTADO) */}
-      <div 
-        className="glass-panel" 
+      {/* PANEL SUPERIOR */}
+      <div
+        className="glass-panel"
         style={{
           position: 'absolute',
-          top: '32px',
-          left: '364px',
-          transform: 'translateX(-50%) scale(2.5)',
-          transformOrigin: 'top left',
-          zIndex: 1000,
-          padding: '22px 36px',
+          top: '15px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+          padding: '12px 24px',
           display: 'flex',
           alignItems: 'center',
-          gap: '28px',
-          borderRadius: '24px',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-          border: '2px solid rgba(255,255,255,0.15)'
+          gap: '20px',
+          borderRadius: '16px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ color: '#3b82f6', fontSize: '40px' }}>⚡</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ color: '#3b82f6', fontSize: '22px' }}>⚡</span>
           <div>
-            <h1 style={{ margin: 0, fontSize: '32px', fontWeight: '900', letterSpacing: '0.5px', color: '#ffffff' }}>
-              GeoTracker <span style={{ fontSize: '15px', background: 'rgba(59,130,246,0.3)', color: '#60a5fa', padding: '4px 12px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.5)', fontWeight: 'bold', verticalAlign: 'middle' }}>PRO</span>
+            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#ffffff' }}>
+              GeoTracker <span style={{ fontSize: '11px', background: 'rgba(59,130,246,0.3)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px' }}>PRO</span>
             </h1>
-            <p style={{ margin: '4px 0 0 0', fontSize: '16px', color: '#94a3b8', fontWeight: '600' }}>
-              Consola de Monitoreo en Vivo
+            <p style={{ margin: 0, fontSize: '11px', color: '#38bdf8', fontWeight: '600' }}>
+              Ruta: {activeRouteInfo.name}
             </p>
           </div>
         </div>
 
-        <div style={{ height: '48px', width: '2px', background: 'rgba(255,255,255,0.2)' }}></div>
+        <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(0,0,0,0.5)', padding: '10px 20px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.15)' }}>
-          <span style={{ height: '14px', width: '14px', borderRadius: '50%', backgroundColor: isConnected ? '#10b981' : '#ef4444', boxShadow: isConnected ? '0 0 16px #10b981' : 'none' }}></span>
-          <span style={{ fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace', color: isConnected ? '#10b981' : '#ef4444', letterSpacing: '1px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.4)', padding: '6px 14px', borderRadius: '20px' }}>
+          <span style={{ height: '10px', width: '10px', borderRadius: '50%', backgroundColor: isConnected ? '#10b981' : '#ef4444' }}></span>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: isConnected ? '#10b981' : '#ef4444' }}>
             {isConnected ? 'ONLINE' : 'OFFLINE'}
           </span>
         </div>
+
+        <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffffff', display: 'block' }}>{user?.name}</span>
+            <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: '600' }}>{user?.role}</span>
+          </div>
+          <button onClick={logout} style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer' }}>
+            Salir
+          </button>
+        </div>
       </div>
 
-      {/* 2. PANEL DE TELEMETRÍA INFERIOR XL (RESPONSIVE / HIGH-DPI) */}
-      <div 
-        className="glass-panel" 
+      {/* PANEL INFERIOR DE TELEMETRÍA */}
+      <div
+        className="glass-panel"
         style={{
           position: 'absolute',
-          bottom: '40px',
+          bottom: '20px',
           left: '50%',
-          transform: 'translateX(-50%) scale(2.5)',
-          transformOrigin: 'bottom center',
-          zIndex: 1000,
-          padding: '28px 56px',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+          padding: '16px 28px',
           display: 'flex',
           alignItems: 'center',
-          gap: '50px',
-          borderRadius: '28px',
-          maxWidth: '95vw',
-          boxShadow: '0 25px 60px rgba(0,0,0,0.7)',
-          border: '2px solid rgba(255,255,255,0.15)',
+          gap: '28px',
+          borderRadius: '18px',
           background: 'rgba(15, 23, 42, 0.92)'
         }}
       >
-        {/* VEHÍCULO Y VELOCIDAD */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '28px' }}>
-          <div>
-            <span style={{ fontSize: '14px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', letterSpacing: '1px', display: 'block' }}>Vehículo</span>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>Unidad V-01</span>
-          </div>
-          <div style={{ height: '60px', width: '2px', background: 'rgba(255,255,255,0.2)' }}></div>
-          <div>
-            <span style={{ fontSize: '14px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', letterSpacing: '1px', display: 'block' }}>Velocidad</span>
-            <span style={{ fontSize: '64px', fontWeight: '900', fontFamily: 'monospace', color: '#60a5fa', lineHeight: '1' }}>
-              {position.speed} <span style={{ fontSize: '20px', fontWeight: '600', color: '#94a3b8' }}>km/h</span>
-            </span>
-          </div>
+        <div>
+          <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Velocidad</span>
+          <span style={{ fontSize: '32px', fontWeight: '900', fontFamily: 'monospace', color: '#60a5fa' }}>
+            {position.speed} <span style={{ fontSize: '12px', color: '#94a3b8' }}>km/h</span>
+          </span>
         </div>
 
-        <div style={{ height: '70px', width: '2px', background: 'rgba(255,255,255,0.2)' }}></div>
+        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        {/* DISTANCIA Y PUNTOS */}
-        <div style={{ display: 'flex', gap: '40px', fontFamily: 'monospace' }}>
-          <div>
-            <span style={{ fontSize: '14px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', letterSpacing: '1px', display: 'block', fontFamily: 'sans-serif' }}>Distancia Traza</span>
-            <span style={{ fontSize: '28px', fontWeight: '800', color: '#ffffff' }}>{totalDistance.toFixed(2)} <span style={{ fontSize: '18px', color: '#94a3b8' }}>km</span></span>
-          </div>
-          <div>
-            <span style={{ fontSize: '14px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', letterSpacing: '1px', display: 'block', fontFamily: 'sans-serif' }}>Puntos Recibidos</span>
-            <span style={{ fontSize: '28px', fontWeight: '800', color: '#ffffff' }}>{path.length}</span>
-          </div>
+        <div style={{ fontFamily: 'monospace' }}>
+          <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Distancia</span><strong>{totalDistance.toFixed(2)} km</strong></div>
+          <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Puntos</span><strong>{totalPointsCount}</strong></div>
         </div>
 
-        <div style={{ height: '70px', width: '2px', background: 'rgba(255,255,255,0.2)' }}></div>
+        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        {/* COORDENADAS LAT / LNG */}
-        <div style={{ fontFamily: 'monospace', fontSize: '18px', color: '#f1f5f9', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div><span style={{ color: '#64748b', fontWeight: 'bold' }}>LAT:</span> {position.lat.toFixed(5)}</div>
-          <div><span style={{ color: '#64748b', fontWeight: 'bold' }}>LNG:</span> {position.lng.toFixed(5)}</div>
+        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#f1f5f9' }}>
+          <div><span style={{ color: '#64748b' }}>LAT:</span> {position.lat.toFixed(5)}</div>
+          <div><span style={{ color: '#64748b' }}>LNG:</span> {position.lng.toFixed(5)}</div>
         </div>
 
-        <div style={{ height: '70px', width: '2px', background: 'rgba(255,255,255,0.2)' }}></div>
+        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
 
-        {/* ÚLTIMA ACTUALIZACIÓN */}
         <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-          <span style={{ fontSize: '14px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', letterSpacing: '1px', display: 'block', fontFamily: 'sans-serif' }}>Último Paquete</span>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#38bdf8' }}>{lastUpdatedTime}</span>
+          <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Último Paquete</span>
+          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#38bdf8' }}>{lastUpdatedTime}</span>
         </div>
       </div>
 
-      {/* 3. MAPA LEAFLET A PANTALLA COMPLETA */}
-      <MapContainer
-        center={[10.96854, -74.78132]}
-        zoom={17}
-        maxZoom={20}
-        scrollWheelZoom={true}
-        style={{ height: '100%', width: '100%' }}
-        zoomControl={true}
-      >
-        <MapController center={[position.lat, position.lng]} />
-
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png"
-          detectRetina={true}
-          tileSize={2048}
-          zoomOffset={-3}
-          maxZoom={20}
-          maxNativeZoom={19}
-        />
-
-        {path.length > 1 && (
-          <Polyline
-            positions={path}
-            color="#2563eb"
-            weight={7}
-            opacity={0.85}
-          />
-        )}
-
-        {lastStoredPosition && (
-          <Marker position={[lastStoredPosition.lat, lastStoredPosition.lng]} icon={startIcon}>
-            <Popup>
-              <div style={{ padding: '8px', textAlign: 'center' }}>
-                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '16px' }}>🏁 Punto Inicial BD</p>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
-        <Marker position={[position.lat, position.lng]} icon={livePulseIcon}>
-          <Popup>
-            <div style={{ padding: '8px', textAlign: 'center' }}>
-              <p style={{ margin: 0, fontWeight: 'bold', fontSize: '16px', color: '#3b82f6' }}>⚡ Vehículo V-01 (En Vivo)</p>
-              <p style={{ margin: '6px 0 0 0', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '18px' }}>{position.speed} km/h</p>
-            </div>
-          </Popup>
-        </Marker>
-      </MapContainer>
-
+      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>
   );
 };

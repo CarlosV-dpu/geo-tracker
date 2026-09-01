@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { DriverPanel } from './pages/DriverPanel';
-import { MapView } from './pages/MapView4'; // 👈 Se mantiene tu archivo MapView4
+import { MapView } from './pages/MapView'; // 👈 Se mantiene tu archivo MapView4
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './App.css';
 
