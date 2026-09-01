@@ -14,10 +14,10 @@ import { Role } from '@prisma/client';
 
 @WebSocketGateway({
   cors: {
-    origin: '*', 
+    origin: '*',
   },
 })
-export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect{
+export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
@@ -28,7 +28,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   async handleConnection(client: Socket) {
     try {
-      // Extraemos el token desde el cliente (sea por auth objeto o headers)
       const authHeader = client.handshake.headers?.authorization;
       const token =
         client.handshake.auth?.token ||
@@ -40,10 +39,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
         return;
       }
 
-      // Validar el token JWT
       const payload = await this.jwtService.verifyAsync(token);
-
-      // Guardamos la información del usuario en la sesión de este socket específico
       client.data.user = payload;
       console.log(`⚡ Cliente Autenticado -> ID: ${client.id} | Email: ${payload.email} | Rol: ${payload.role}`);
     } catch (error) {
@@ -56,17 +52,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     console.log(`❌ Cliente Desconectado -> ID: ${client.id}`);
   }
 
-  // 3. Unirse a la sala (Cualquier rol autenticado ADMIN, DRIVER, ROOT puede escuchar)
-  @SubscribeMessage('joinRoute')
-  handleJoinRoute(
-    @MessageBody() data: { routeId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    client.join(`route_${data.routeId}`);
-    return { event: 'joinedRoute', routeId: data.routeId };
-  }
-
-  // 4. Transmitir ubicación (Protegido solo para DRIVER y ROOT)
   @SubscribeMessage('updateLocation')
   async handleUpdateLocation(
     @MessageBody() payload: { 
@@ -82,7 +67,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     const user = client.data.user;
 
-    // Control de acceso por rol
     if (!user || (user.role !== Role.DRIVER && user.role !== Role.ROOT)) {
       return { 
         status: 'error', 
@@ -90,7 +74,8 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       };
     }
 
-    const { identity, name, description, driverId, lat, lng, speed = 0 } = payload;
+    const { identity, name, description, lat, lng, speed = 0 } = payload;
+    const effectiveDriverId = Number(user.sub || user.id || payload.driverId);
 
     const newPosition = await this.prisma.vehiclePosition.create({
       data: {
@@ -104,10 +89,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
             },
             create: { 
               identity: identity,
-              name: name ||'Ruta de Prueba',
-              description: description || 'Cargamento de ropa',
+              name: name || 'Ruta de Prueba',
+              description: description || 'Cargamento de mercancía',
               driver: {
-                connect: { id: Number(driverId)},
+                connect: { id: effectiveDriverId },
               },
             },
           },
@@ -118,38 +103,40 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       },
     });
 
-    // Emitir la nueva posición a todos los escuchas (ADMINs / Supervisores) en esa sala
-    this.server.to(`route_${identity}`).emit('locationUpdated', newPosition);
+    // Se construye el payload asegurando enviar identity y name de la RUTA
+    const locationPayload = {
+      identity: identity,
+      name: name,
+      lat: newPosition.lat,
+      lng: newPosition.lng,
+      speed: newPosition.speed,
+      timestamp: newPosition.timestamp,
+    };
 
-    return { status: 'success', data: newPosition };
+    // Emitir globalmente a todos los clientes conectados (Mapas de monitoreo)
+    this.server.emit('locationUpdated', locationPayload);
+
+    return { status: 'success', data: locationPayload };
   }
 
-  // Agrega este método dentro de location.gateway.ts
-@SubscribeMessage('finishRoute')
-async handleFinishRoute(
-  @MessageBody() payload: { identity: string; name?: string },
-) {
-  const identity = payload.identity;
-  const name = payload.name || 'Ruta 1'; // Fallback por seguridad
+  @SubscribeMessage('finishRoute')
+  async handleFinishRoute(
+    @MessageBody() payload: { identity: string; name?: string },
+  ) {
+    const identity = payload.identity;
 
-  if (!identity) {
-    return { status: 'error', message: 'Se requiere identity para finalizar la ruta.' };
+    if (!identity) {
+      return { status: 'error', message: 'Se requiere identity para finalizar la ruta.' };
+    }
+
+    // Desactivar la ruta activa por su identity de forma limpia
+    await this.prisma.route.updateMany({
+      where: { identity: identity, isActive: true },
+      data: { isActive: false },
+    });
+
+    this.server.emit('routeFinished', { identity });
+
+    return { status: 'success' };
   }
-
-  // Actualización utilizando la clave compuesta sin tocar la base de datos
-  const updatedRoute = await this.prisma.route.update({
-    where: { 
-      identity_name: {
-        identity: identity,
-        name: name,
-      },
-    },
-    data: { isActive: false },
-  });
-
-  // Notificar a los clientes conectados a la sala de la ruta
-  this.server.to(`route_${identity}`).emit('routeFinished', updatedRoute);
-
-  return { status: 'success', data: updatedRoute };
-}
 }

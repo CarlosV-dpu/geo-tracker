@@ -21,4 +21,20 @@ export class LocationController {
 
     return positions;
   }
+
+  @Get('active')
+  async getActiveRoute() {
+    // Busca la última ruta que esté activa en la base de datos
+    const activeRoute = await this.prisma.route.findFirst({
+    where: { isActive: true },
+    orderBy: { updatedAt: 'desc' },
+    include: {
+      positions: {
+        orderBy: { timestamp: 'asc' },
+      },
+    },
+  });
+
+  return activeRoute;
+  }
 }

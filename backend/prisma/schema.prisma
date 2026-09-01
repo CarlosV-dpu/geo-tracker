@@ -9,6 +9,7 @@ datasource db {
 enum Role {
   ADMIN
   DRIVER
+  SUPERVISOR
   ROOT
   OTHER
 }
