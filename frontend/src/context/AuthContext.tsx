@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 // Tipamos el enum Role del Schema Prisma
-export type Role = 'ROOT' | 'ADMIN' | 'DRIVER';
+export type Role = 'ROOT' | 'ADMIN' | 'DRIVER' | 'SUPERVISOR' | 'OTHER';
 
 export interface User {
   id: string;

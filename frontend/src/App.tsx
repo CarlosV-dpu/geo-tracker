@@ -4,7 +4,6 @@ import { Register } from './pages/Register';
 import { DriverPanel } from './pages/DriverPanel';
 import { MapView } from './pages/MapView'; // 👈 Se mantiene tu archivo MapView4
 import { ProtectedRoute } from './components/ProtectedRoute';
-import './App.css';
 
 function App() {
   return (
@@ -14,12 +13,12 @@ function App() {
       <Route path="/register" element={<Register />} />
 
       {/* 2. Ruta Protegida para Conductores (DRIVER y ROOT) */}
-      <Route element={<ProtectedRoute allowedRoles={['DRIVER', 'ROOT']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['DRIVER', 'ADMIN', 'ROOT']} />}>
         <Route path="/driver" element={<DriverPanel />} />
       </Route>
 
-      {/* 3. Ruta Protegida para el Mapa de Monitoreo (ADMIN y ROOT) */}
-      <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'ROOT']} />}>
+      {/* 3. Ruta Protegida para el Mapa de Monitoreo (ADMIN, SUPERVISOR y ROOT) */}
+      <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'ROOT']} />}>
         <Route path="/map" element={<MapView />} />
       </Route>
 

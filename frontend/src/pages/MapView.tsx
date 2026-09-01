@@ -4,14 +4,46 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '../context/AuthContext';
 
-interface Position {
-  identity?: string;
-  name?: string;
+interface IncomingLocation {
+  driverId: number;
+  driverName: string;
+  identity: string;
+  name: string;
   lat: number;
   lng: number;
   speed: number;
   timestamp?: string;
 }
+
+interface DriverData {
+  driverId: number;
+  driverName: string;
+  identity: string;
+  routeName: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  lastUpdatedTime: string;
+  color: string;
+  activePath: [number, number][];
+  historicRoutes: [number, number][][];
+}
+
+// Paleta de colores distintivos para asignación automática por driverId
+const PALETTE = [
+  '#3b82f6', // Azul
+  '#10b981', // Verde
+  '#f59e0b', // Ambar
+  '#8b5cf6', // Purpura
+  '#ec4899', // Rosa
+  '#06b6d4', // Cian
+  '#f97316', // Naranja
+  '#14b8a6', // Turquesa
+];
+
+const getDriverColor = (id: number): string => {
+  return PALETTE[Math.abs(id) % PALETTE.length];
+};
 
 const calculateTotalDistance = (coords: [number, number][]): number => {
   if (coords.length < 2) return 0;
@@ -38,40 +70,37 @@ export const MapView = () => {
   const { token, user, logout } = useAuth();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const marker = useRef<maplibregl.Marker | null>(null);
 
-  const [activeRouteInfo, setActiveRouteInfo] = useState<{ identity: string; name: string }>({
-    identity: 'Esperando ruta...',
-    name: 'Sin ruta activa',
-  });
+  // Mapa de referencias de marcadores MapLibre por ID de conductor
+  const markersRef = useRef<Map<number, maplibregl.Marker>>(new Map());
 
-  const [position, setPosition] = useState<Position>({
-    lat: 10.96854,
-    lng: -74.78132,
-    speed: 0,
-  });
-
-  const [historicRoutes, setHistoricRoutes] = useState<[number, number][][]>([]);
-  const [activePath, setActivePath] = useState<[number, number][]>([]);
+  // Estado que agrupa a todos los conductores activos { [driverId]: DriverData }
+  const [drivers, setDrivers] = useState<Record<number, DriverData>>({});
+  const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('--:--:--');
 
-  const activeRouteInfoRef = useRef(activeRouteInfo);
-  activeRouteInfoRef.current = activeRouteInfo;
-
-  const activePathRef = useRef(activePath);
-  activePathRef.current = activePath;
+  // Conductor seleccionado actualmente para la telemetría
+  const selectedDriver = useMemo(() => {
+    if (selectedDriverId !== null && drivers[selectedDriverId]) {
+      return drivers[selectedDriverId];
+    }
+    const list = Object.values(drivers);
+    return list.length > 0 ? list[0] : null;
+  }, [drivers, selectedDriverId]);
 
   const totalDistance = useMemo(() => {
-    const allCoords = [...historicRoutes.flat(), ...activePath];
+    if (!selectedDriver) return 0;
+    const allCoords = [...selectedDriver.historicRoutes.flat(), ...selectedDriver.activePath];
     return calculateTotalDistance(allCoords);
-  }, [historicRoutes, activePath]);
+  }, [selectedDriver]);
 
   const totalPointsCount = useMemo(() => {
-    const historicCount = historicRoutes.reduce((acc, r) => acc + r.length, 0);
-    return historicCount + activePath.length;
-  }, [historicRoutes, activePath]);
+    if (!selectedDriver) return 0;
+    const historicCount = selectedDriver.historicRoutes.reduce((acc, r) => acc + r.length, 0);
+    return historicCount + selectedDriver.activePath.length;
+  }, [selectedDriver]);
 
+  // Inicialización del Mapa Base
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
 
@@ -81,19 +110,10 @@ export const MapView = () => {
       container: mapContainer.current,
       style: `https://api.maptiler.com/maps/streets-v4/style.json?key=${apiKey}`,
       center: [-74.78132, 10.96854],
-      zoom: 15,
+      zoom: 14,
     });
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    const el = document.createElement('div');
-    el.className = 'pulse-marker';
-    el.style.width = '20px';
-    el.style.height = '20px';
-
-    marker.current = new maplibregl.Marker({ element: el })
-      .setLngLat([-74.78132, 10.96854])
-      .addTo(map.current);
 
     map.current.on('load', () => {
       map.current?.addSource('routes-source', {
@@ -115,11 +135,14 @@ export const MapView = () => {
     });
 
     return () => {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current.clear();
       map.current?.remove();
       map.current = null;
     };
   }, []);
 
+  // Carga inicial de ruta activa REST y Conexión WebSockets
   useEffect(() => {
     if (!token) return;
 
@@ -129,11 +152,27 @@ export const MapView = () => {
       .then((res) => res.json())
       .then((routeData) => {
         if (routeData && routeData.positions && routeData.positions.length > 0) {
-          setActiveRouteInfo({ identity: routeData.identity, name: routeData.name });
+          const driverId = routeData.driverId || 1;
           const coords: [number, number][] = routeData.positions.map((p: any) => [p.lat, p.lng]);
-          setHistoricRoutes([coords]);
           const latest = routeData.positions[routeData.positions.length - 1];
-          setPosition(latest);
+
+          setDrivers((prev) => ({
+            ...prev,
+            [driverId]: {
+              driverId,
+              driverName: routeData.driverName || `Conductor #${driverId}`,
+              identity: routeData.identity,
+              routeName: routeData.name || 'Ruta Activa',
+              lat: latest.lat,
+              lng: latest.lng,
+              speed: latest.speed || 0,
+              lastUpdatedTime: new Date().toLocaleTimeString(),
+              color: getDriverColor(driverId),
+              activePath: coords,
+              historicRoutes: [],
+            },
+          }));
+          setSelectedDriverId(driverId);
         }
       })
       .catch((err) => console.error('Error al obtener la ruta activa:', err));
@@ -143,18 +182,47 @@ export const MapView = () => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    socket.on('locationUpdated', (data: Position) => {
-      if (data.identity && data.identity !== activeRouteInfoRef.current.identity) {
-        setActiveRouteInfo({ identity: data.identity, name: data.name || 'Nueva Ruta' });
-        if (activePathRef.current.length > 0) {
-          setHistoricRoutes((prev) => [...prev, activePathRef.current]);
-          setActivePath([]);
-        }
-      }
+    socket.on('locationUpdated', (data: IncomingLocation) => {
+      const driverId = data.driverId || 1;
+      const now = new Date().toLocaleTimeString();
 
-      setPosition(data);
-      setActivePath((prev) => [...prev, [data.lat, data.lng]]);
-      setLastUpdatedTime(new Date().toLocaleTimeString());
+      setDrivers((prev) => {
+        const currentDriver = prev[driverId];
+        const color = currentDriver ? currentDriver.color : getDriverColor(driverId);
+
+        let historicRoutes = currentDriver ? [...currentDriver.historicRoutes] : [];
+        let activePath: [number, number][] = currentDriver ? [...currentDriver.activePath] : [];
+
+        // Si la ruta cambió para este conductor, archivar la anterior
+        if (currentDriver && data.identity && data.identity !== currentDriver.identity) {
+          if (activePath.length > 0) {
+            historicRoutes.push(activePath);
+            activePath = [];
+          }
+        }
+
+        activePath.push([data.lat, data.lng]);
+
+        return {
+          ...prev,
+          [driverId]: {
+            driverId,
+            driverName: data.driverName || `Conductor #${driverId}`,
+            identity: data.identity,
+            routeName: data.name || 'Ruta sin nombre',
+            lat: data.lat,
+            lng: data.lng,
+            speed: data.speed,
+            lastUpdatedTime: now,
+            color,
+            activePath,
+            historicRoutes,
+          },
+        };
+      });
+
+      // Seleccionar automáticamente el primer conductor emitiente si no hay ninguno activo
+      setSelectedDriverId((curr) => (curr === null ? driverId : curr));
     });
 
     return () => {
@@ -165,68 +233,145 @@ export const MapView = () => {
     };
   }, [token]);
 
-  // Renderizado dinámico de rutas sobre el mapa
+  // Gestión dinámica de marcadores por conductor en el mapa
   useEffect(() => {
     if (!map.current) return;
 
-    marker.current?.setLngLat([position.lng, position.lat]);
-    map.current.easeTo({ center: [position.lng, position.lat], duration: 1000 });
+    Object.values(drivers).forEach((driver) => {
+      let marker = markersRef.current.get(driver.driverId);
+
+      if (!marker) {
+        // Elemento contenedor que MapLibre usa para posicionar (translate3d)
+        const wrapper = document.createElement('div');
+        wrapper.className = 'custom-driver-marker-wrapper';
+
+        // Elemento visual interno sobre el cual aplicaremos el transform: scale()
+        const inner = document.createElement('div');
+        inner.className = 'custom-driver-marker-inner';
+        inner.style.width = '22px';
+        inner.style.height = '22px';
+        inner.style.borderRadius = '50%';
+        inner.style.backgroundColor = driver.color;
+        inner.style.border = '3px solid #ffffff';
+        inner.style.boxShadow = `0 0 10px ${driver.color}`;
+        inner.style.cursor = 'pointer';
+        inner.style.transition = 'transform 0.2s ease, border-color 0.2s ease';
+
+        wrapper.appendChild(inner);
+
+        // Selección al hacer clic directo en el marcador
+        wrapper.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setSelectedDriverId(driver.driverId);
+          map.current?.easeTo({ center: [driver.lng, driver.lat], zoom: 16, duration: 800 });
+        });
+
+        marker = new maplibregl.Marker({ element: wrapper })
+          .setLngLat([driver.lng, driver.lat])
+          .addTo(map.current!);
+
+        markersRef.current.set(driver.driverId, marker);
+      } else {
+        marker.setLngLat([driver.lng, driver.lat]);
+      }
+
+      // Se modifica ÚNICAMENTE el hijo interno para no romper la posición 3D de MapLibre
+      const wrapperEl = marker.getElement();
+      const innerEl = wrapperEl.querySelector('.custom-driver-marker-inner') as HTMLDivElement;
+
+      if (innerEl) {
+        if (driver.driverId === selectedDriverId) {
+          innerEl.style.transform = 'scale(1.4)';
+          innerEl.style.border = '3px solid #ffffff';
+          wrapperEl.style.zIndex = '1000';
+        } else {
+          innerEl.style.transform = 'scale(1.0)';
+          innerEl.style.border = '2px solid rgba(255,255,255,0.7)';
+          wrapperEl.style.zIndex = '1';
+        }
+      }
+    });
+  }, [drivers, selectedDriverId]);
+
+  // Dibujado de capas GeoJSON para todas las trayectorias con degradado de opacidad
+  useEffect(() => {
+    if (!map.current) return;
 
     const source = map.current.getSource('routes-source') as maplibregl.GeoJSONSource;
     if (!source) return;
 
     const features: maplibregl.GeoJSONFeature[] = [];
-    const totalHistoric = historicRoutes.length;
+    const MAX_HISTORIC_ROUTES = 5; // Número máximo de rutas pasadas a mostrar
 
-    // Gradiente de tonos de azul para rutas históricas según antigüedad
-    const blueShades = ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe'];
+    // Escala de opacidad progresiva (Ruta previa 1 -> Ruta previa 5)
+    const OPACITY_DECAY = [0.65, 0.45, 0.30, 0.18, 0.08];
 
-    historicRoutes.forEach((routeCoords, index) => {
-      if (routeCoords.length < 2) return;
+    Object.values(drivers).forEach((driver) => {
+      const isSelected = driver.driverId === selectedDriverId;
+      const historicCount = driver.historicRoutes.length;
 
-      // recencyIndex: 0 = Ruta inmediatamente anterior a la activa
-      const recencyIndex = totalHistoric - 1 - index;
+      // 1. Rutas Históricas del Conductor (con degradado según antigüedad)
+      driver.historicRoutes.forEach((routeCoords, index) => {
+        if (routeCoords.length < 2) return;
 
-      // Asignación de color según recencia
-      const color = blueShades[recencyIndex] || '#e2e8f0';
+        // 0 = la más reciente completada, 1 = la anterior a esa, etc.
+        const indexFromLatest = historicCount - 1 - index;
 
-      // Opacidad decreciente (de 0.75 a un mínimo de 0.15)
-      const opacity = Math.max(0.15, 0.75 - recencyIndex * 0.15);
+        // Omitir rutas más antiguas que el límite deseado (desaparecen progresivamente)
+        if (indexFromLatest >= MAX_HISTORIC_ROUTES) return;
 
-      // Grosor decreciente (de 5px a un mínimo de 2px)
-      const width = Math.max(2, 5 - recencyIndex);
+        // Obtener opacidad base decreciente
+        const baseOpacity = OPACITY_DECAY[indexFromLatest] || 0.05;
 
-      features.push({
-        type: 'Feature',
-        properties: { color, opacity, width },
-        geometry: {
-          type: 'LineString',
-          coordinates: routeCoords.map(([lat, lng]) => [lng, lat]),
-        },
-      } as unknown as maplibregl.GeoJSONFeature);
+        // Si el conductor está seleccionado mantiene la escala; si no, se atenúa aún más
+        const finalOpacity = isSelected ? baseOpacity : baseOpacity * 0.35;
+        
+        // El grosor de la línea también disminuye con la antigüedad
+        const lineWidth = isSelected 
+          ? Math.max(2, 4.5 - indexFromLatest * 0.6) 
+          : 1.5;
+
+        features.push({
+          type: 'Feature',
+          properties: {
+            color: driver.color,
+            opacity: finalOpacity,
+            width: lineWidth,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: routeCoords.map(([lat, lng]) => [lng, lat]),
+          },
+        } as unknown as maplibregl.GeoJSONFeature);
+      });
+
+      // 2. Ruta Activa del Conductor (Máxima opacidad y destacado)
+      if (driver.activePath.length > 1) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            color: driver.color,
+            opacity: isSelected ? 1.0 : 0.4,
+            width: isSelected ? 6 : 3,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: driver.activePath.map(([lat, lng]) => [lng, lat]),
+          },
+        } as unknown as maplibregl.GeoJSONFeature);
+      }
     });
-
-    // Ruta Activa actual: Azul intenso brillante, opacidad completa y mayor grosor
-    if (activePath.length > 1) {
-      features.push({
-        type: 'Feature',
-        properties: { color: '#1d4ed8', opacity: 1.0, width: 6 },
-        geometry: {
-          type: 'LineString',
-          coordinates: activePath.map(([lat, lng]) => [lng, lat]),
-        },
-      } as unknown as maplibregl.GeoJSONFeature);
-    }
 
     source.setData({
       type: 'FeatureCollection',
       features: features as unknown as maplibregl.GeoJSONFeature[],
     });
-  }, [position, historicRoutes, activePath]);
+  }, [drivers, selectedDriverId]);
 
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      {/* PANEL SUPERIOR */}
+      
+      {/* PANEL SUPERIOR DE SELECCIÓN Y CONTROLES */}
       <div
         className="glass-panel"
         style={{
@@ -243,15 +388,43 @@ export const MapView = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ color: '#3b82f6', fontSize: '22px' }}>⚡</span>
+          <span style={{ color: selectedDriver?.color || '#3b82f6', fontSize: '22px' }}>⚡</span>
           <div>
             <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#ffffff' }}>
               GeoTracker <span style={{ fontSize: '11px', background: 'rgba(59,130,246,0.3)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px' }}>PRO</span>
             </h1>
             <p style={{ margin: 0, fontSize: '11px', color: '#38bdf8', fontWeight: '600' }}>
-              Ruta: {activeRouteInfo.name}
+              {selectedDriver ? `Vehículo: ${selectedDriver.driverName} | Ruta: ${selectedDriver.routeName}` : 'Esperando transmisiones...'}
             </p>
           </div>
+        </div>
+
+        <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+        {/* SELECTOR DE CONDUCTORES TRANSMITIENDO */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>Drivers:</span>
+          {Object.values(drivers).map((d) => (
+            <button
+              key={d.driverId}
+              onClick={() => {
+                setSelectedDriverId(d.driverId);
+                map.current?.easeTo({ center: [d.lng, d.lat], zoom: 16, duration: 800 });
+              }}
+              style={{
+                background: d.driverId === selectedDriverId ? d.color : 'rgba(255,255,255,0.1)',
+                color: '#ffffff',
+                border: d.driverId === selectedDriverId ? '2px solid #ffffff' : 'none',
+                borderRadius: '8px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+              }}
+            >
+              {d.driverName}
+            </button>
+          ))}
         </div>
 
         <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
@@ -276,51 +449,54 @@ export const MapView = () => {
         </div>
       </div>
 
-      {/* PANEL INFERIOR DE TELEMETRÍA */}
-      <div
-        className="glass-panel"
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 10,
-          padding: '16px 28px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '28px',
-          borderRadius: '18px',
-          background: 'rgba(15, 23, 42, 0.92)'
-        }}
-      >
-        <div>
-          <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Velocidad</span>
-          <span style={{ fontSize: '32px', fontWeight: '900', fontFamily: 'monospace', color: '#60a5fa' }}>
-            {position.speed} <span style={{ fontSize: '12px', color: '#94a3b8' }}>km/h</span>
-          </span>
+      {/* PANEL INFERIOR DE TELEMETRÍA DE VEHÍCULO SELECCIONADO */}
+      {selectedDriver && (
+        <div
+          className="glass-panel"
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            padding: '16px 28px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '28px',
+            borderRadius: '18px',
+            background: 'rgba(15, 23, 42, 0.92)',
+            borderLeft: `6px solid ${selectedDriver.color}`,
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Velocidad</span>
+            <span style={{ fontSize: '32px', fontWeight: '900', fontFamily: 'monospace', color: selectedDriver.color }}>
+              {selectedDriver.speed} <span style={{ fontSize: '12px', color: '#94a3b8' }}>km/h</span>
+            </span>
+          </div>
+
+          <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+          <div style={{ fontFamily: 'monospace' }}>
+            <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Distancia Recorrida</span><strong>{totalDistance.toFixed(2)} km</strong></div>
+            <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Puntos GPS</span><strong>{totalPointsCount}</strong></div>
+          </div>
+
+          <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+          <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#f1f5f9' }}>
+            <div><span style={{ color: '#64748b' }}>LAT:</span> {selectedDriver.lat.toFixed(5)}</div>
+            <div><span style={{ color: '#64748b' }}>LNG:</span> {selectedDriver.lng.toFixed(5)}</div>
+          </div>
+
+          <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+          <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Último Paquete</span>
+            <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#38bdf8' }}>{selectedDriver.lastUpdatedTime}</span>
+          </div>
         </div>
-
-        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
-
-        <div style={{ fontFamily: 'monospace' }}>
-          <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Distancia</span><strong>{totalDistance.toFixed(2)} km</strong></div>
-          <div><span style={{ fontSize: '10px', color: '#94a3b8', display: 'block' }}>Puntos</span><strong>{totalPointsCount}</strong></div>
-        </div>
-
-        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
-
-        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#f1f5f9' }}>
-          <div><span style={{ color: '#64748b' }}>LAT:</span> {position.lat.toFixed(5)}</div>
-          <div><span style={{ color: '#64748b' }}>LNG:</span> {position.lng.toFixed(5)}</div>
-        </div>
-
-        <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
-
-        <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-          <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: '800', display: 'block' }}>Último Paquete</span>
-          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#38bdf8' }}>{lastUpdatedTime}</span>
-        </div>
-      </div>
+      )}
 
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>

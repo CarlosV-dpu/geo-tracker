@@ -76,6 +76,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     const { identity, name, description, lat, lng, speed = 0 } = payload;
     const effectiveDriverId = Number(user.sub || user.id || payload.driverId);
+    const driverName = user.name || `Conductor #${effectiveDriverId}`;
 
     const newPosition = await this.prisma.vehiclePosition.create({
       data: {
@@ -105,6 +106,8 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // Se construye el payload asegurando enviar identity y name de la RUTA
     const locationPayload = {
+      driverId: effectiveDriverId,
+      driverName: driverName,
       identity: identity,
       name: name,
       lat: newPosition.lat,
