@@ -17,7 +17,8 @@ export const ProtectedRoute = ({ allowedRoles }: ProtectedRouteProps) => {
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
     // Redirección inteligente si no tiene permisos suficientes
     if (user.role === 'DRIVER') return <Navigate to="/driver" replace />;
-    return <Navigate to="/map" replace />;
+    if (user.role === 'SUPERVISOR') return <Navigate to="/map" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <Outlet/>;

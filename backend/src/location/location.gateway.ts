@@ -67,10 +67,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     const user = client.data.user;
 
-    if (!user || (user.role !== Role.DRIVER && user.role !== Role.ROOT)) {
+    if (!user || (user.role !== Role.DRIVER && user.role !== Role.ROOT && user.role !== Role.ADMIN)) {
       return { 
         status: 'error', 
-        message: 'Acceso denegado: Solo un Conductor (DRIVER) o ROOT puede emitir ubicaciones.' 
+        message: 'Acceso denegado: Solo un Conductor (DRIVER) puede emitir ubicaciones.'
       };
     }
 

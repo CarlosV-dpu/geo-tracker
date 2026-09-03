@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'super_secret_key', // Usa tu clave secreta del .env
+      secret: process.env.JWT_SECRET || 'geotracker_secret_key_2026', // Usa tu clave secreta del .env
       signOptions: { expiresIn: '48h' },
     }),
   ],

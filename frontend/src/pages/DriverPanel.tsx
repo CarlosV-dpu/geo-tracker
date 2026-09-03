@@ -18,7 +18,7 @@ const stepDeltas = [
 ];
 
 const generateRouteDetails = () => {
-  const names = {
+  const Data = {
     product: ["Ropa", "Tecnología", "Juguetes", "Productos de belleza", "Accesorios y joyería", "Productos de aseo"],
     brand: ["Nike", "Adidas", "Puma", "Reebok", "New Balance"],
     stock: ["", "Parte 1", "Parte 2", "Parte 3", "Parte 4", "Parte 5"],
@@ -34,14 +34,14 @@ const generateRouteDetails = () => {
   const date = `${yy}:${mm}:${dd}`;
   const time = `${hh}:${mmn}:${ss}`;
 
-  const prod = names.product[Math.floor(Math.random() * names.product.length)];
-  const brand = names.brand[Math.floor(Math.random() * names.brand.length)];
-  const stock = names.stock[Math.floor(Math.random() * names.stock.length)];
+  const prod = Data.product[Math.floor(Math.random() * Data.product.length)];
+  const brand = Data.brand[Math.floor(Math.random() * Data.brand.length)];
+  const stock = Data.stock[Math.floor(Math.random() * Data.stock.length)];
 
   return {
     identity: `ruta-${date}::${time}`,
-    name: `Cargamento de ${prod} de ${brand} ${stock}`.trim(),
-    description: `Envío de ${prod} programado para el ${date}`,
+    name: `Envío de ${brand}`.trim(),
+    description: ` Cargamento de ${prod} de ${brand} ${stock}`,
   };
 };
 

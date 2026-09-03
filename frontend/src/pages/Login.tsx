@@ -28,8 +28,10 @@ export const Login = () => {
 
       if (data.user.role === 'DRIVER') {
         navigate('/driver');
-      } else {
+      }else if (data.user.role === 'SUPERVISOR') {
         navigate('/map');
+      } else {
+        navigate('/admin');
       }
     } catch (err: any) {
       setError(err.message);
