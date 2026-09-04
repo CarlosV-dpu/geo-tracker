@@ -194,6 +194,28 @@ export const AdminPanel = () => {
     }
   };
 
+  const handleDeleteRoute = async (r: RouteItem) => {
+    const confirmDelete = window.confirm(`¿Estás seguro de eliminar la ruta "${r.name}" (${r.identity})?`);
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`http://localhost:3000/admin/routes/${r.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        // Remueve la ruta de la lista local inmediatamente
+        setRoutes((prev) => prev.filter((item) => item.id !== r.id));
+      } else {
+        const errorData = await res.json();
+        alert(errorData.message || 'Error al eliminar la ruta.');
+      }
+    } catch (err) {
+      console.error('Error al ocultar ruta:', err);
+    }
+  };
+
   // Obtener conductores disponibles y asegurar que el conductor actual asignado no sea filtrado
   const getAvailableDrivers = () => {
     const driversList = users.filter((u) => u.role === 'DRIVER');
@@ -466,6 +488,7 @@ export const AdminPanel = () => {
                 <th style={{ padding: '12px' }}>Puntos Registrados</th>
                 <th style={{ padding: '12px' }}>Fecha Creación</th>
                 <th style={{ padding: '12px' }}>Fecha Actualización</th>
+                <th style={{ padding: '12px', textAlign: 'center' }}>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -532,6 +555,21 @@ export const AdminPanel = () => {
                     >
                       Rastrear
                     </button>
+                    <button
+                        onClick={() => handleDeleteRoute(r)}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid #ef4444',
+                          color: '#f87171',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Eliminar
+                      </button>
                   </td>
 
                 </tr>

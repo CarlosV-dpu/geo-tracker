@@ -122,7 +122,8 @@ export class AdminController {
   @Get('routes')
   async getAllRoutes(@Req() req: any) {
     const currentUserRole = req.user?.role;
-    const whereCondition: any = {};
+    // Filtro base: solo rutas con Visible = 1
+    const whereCondition: any = { Visible: 1 };
     // Si quien consulta es ADMIN, se excluyen las rutas cuyos conductores sean ROOT
     if (currentUserRole === Role.ADMIN) {
       whereCondition.driver = {
@@ -142,6 +143,19 @@ export class AdminController {
         _count: { select: { positions: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Eliminación lógica de una ruta: Cambia el campo Visible a 0
+  @Delete('routes/:id')
+  async softDeleteRoute(@Param('id', ParseIntPipe) id: number) {
+    const targetRoute = await this.prisma.route.findUnique({ where: { id } });
+    if (!targetRoute) throw new NotFoundException('Ruta no encontrada');
+
+    return this.prisma.route.update({
+      where: { id },
+      data: { Visible: 0 },
+      select: { id: true, identity: true, Visible: true },
     });
   }
 
