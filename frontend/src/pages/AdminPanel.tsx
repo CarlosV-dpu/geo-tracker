@@ -291,6 +291,12 @@ export const AdminPanel = () => {
             style={{ background: 'rgba(59, 130, 246, 0.2)', border: '1px solid #3b82f6', color: '#60a5fa', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
             Ir a Monitoreo
           </button>
+          {/* NUEVO BOTÓN PARA IR AL DRIVER PANEL */}
+          <button 
+            onClick={() => window.location.href = '/driver'} 
+            style={{ background: 'rgba(139, 92, 246, 0.2)', border: '1px solid #8b5cf6', color: '#a78bfa', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
+            Ir a Conductor
+          </button>
           <button onClick={logout} style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#f87171', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
             Cerrar Sesión
           </button>

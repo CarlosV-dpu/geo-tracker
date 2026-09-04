@@ -239,6 +239,27 @@ export const DriverPanel = () => {
         </button>
       </div>
 
+      {/* Botón condicional para volver al Panel de Administración si el rol es ADMIN o ROOT */}
+      {(user?.role === 'ADMIN' || user?.role === 'ROOT') && (
+        <button
+          onClick={() => (window.location.href = '/admin')}
+          style={{
+            background: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid #38bdf8',
+            color: '#38bdf8',
+            padding: '12px',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            marginTop: '20px',
+            width: '100%',
+          }}
+        >
+          ⚙️ Ir a Administración
+        </button>
+      )}
+
       <button onClick={logout} style={{ background: '#334155', color: '#e2e8f0', padding: '12px', borderRadius: '12px', border: 'none', fontSize: '14px', cursor: 'pointer', marginTop: '24px', width: '100%' }}>
         Cerrar Sesión
       </button>

@@ -380,10 +380,11 @@ export const MapView = () => {
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          padding: '12px 24px',
+          width: 'max-content',               /* Aumenta el ancho relativo al mapa */
+          padding: '12px 24px',       /* Aumenta el alto y ancho interno con más relleno */
           display: 'flex',
           alignItems: 'center',
-          gap: '20px',
+          gap: '20px',                   /* Mayor separación entre secciones */
           borderRadius: '16px',
         }}
       >
@@ -443,10 +444,36 @@ export const MapView = () => {
             <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffffff', display: 'block' }}>{user?.name}</span>
             <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: '600' }}>{user?.role}</span>
           </div>
+        </div>
+
+        <div style={{ height: '28px', width: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>          
+          {/* Botón condicional para volver al Panel de Administración si el rol es ADMIN o ROOT */}
+          {(user?.role === 'ADMIN' || user?.role === 'ROOT') && (
+            <button
+              onClick={() => (window.location.href = '/admin')}
+              style={{
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid #38bdf8',
+                color: '#38bdf8',
+                padding: '12px',
+                borderRadius: '12px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                marginTop: '20px',
+                width: '100%',
+              }}
+            >
+              ⚙️ Administraión
+            </button>
+          )}
           <button onClick={logout} style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer' }}>
             Salir
           </button>
         </div>
+
       </div>
 
       {/* PANEL INFERIOR DE TELEMETRÍA DE VEHÍCULO SELECCIONADO */}
@@ -458,6 +485,7 @@ export const MapView = () => {
             bottom: '20px',
             left: '50%',
             transform: 'translateX(-50%)',
+            width: 'max-content',    /* Aumenta el ancho relativo al mapa */
             zIndex: 10,
             padding: '16px 28px',
             display: 'flex',
