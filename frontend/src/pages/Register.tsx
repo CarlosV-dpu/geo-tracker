@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 
 export const Register = () => {
   const [name, setName] = useState('');
-  const [cedula, setCedula] = useState(''); // 👈 Nuevo campo
+  const [cedula, setCedula] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'DRIVER' | 'OTHER'>('DRIVER'); // 👈 Solo DRIVER u OTHER

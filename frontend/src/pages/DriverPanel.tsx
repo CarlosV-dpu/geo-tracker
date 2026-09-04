@@ -238,7 +238,7 @@ export const DriverPanel = () => {
           📦 Paquete Entregado (Iniciar Nueva Ruta)
         </button>
       </div>
-
+      
       {/* Botón condicional para volver al Panel de Administración si el rol es ADMIN o ROOT */}
       {(user?.role === 'ADMIN' || user?.role === 'ROOT') && (
         <button
