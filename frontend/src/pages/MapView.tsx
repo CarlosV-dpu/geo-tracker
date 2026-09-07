@@ -99,6 +99,7 @@ export const MapView = () => {
     const historicCount = selectedDriver.historicRoutes.reduce((acc, r) => acc + r.length, 0);
     return historicCount + selectedDriver.activePath.length;
   }, [selectedDriver]);
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   // Inicialización del Mapa Base
   useEffect(() => {
@@ -106,22 +107,38 @@ export const MapView = () => {
 
     const apiKey = import.meta.env.VITE_MAPTILER_API_KEY;
 
-    map.current = new maplibregl.Map({
+    const mapInstance = new maplibregl.Map({
       container: mapContainer.current,
       style: `https://api.maptiler.com/maps/streets-v4/style.json?key=${apiKey}`,
       center: [-74.78132, 10.96854],
       zoom: 14,
     });
 
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.current = mapInstance;
 
-    map.current.on('load', () => {
-      map.current?.addSource('routes-source', {
+    mapInstance.setMissingStyleImageResolver((id) => {
+      if (!mapInstance.hasImage(id)) {
+        // Genera un píxel transparente en canvas para satisfacer la petición de MapLibre
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const imageData = ctx.getImageData(0, 0, 1, 1);
+          mapInstance.addImage(id, imageData,{ sdf: true });
+        }
+      }
+    });
+
+    mapInstance.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    mapInstance.on('load', () => {
+      mapInstance?.addSource('routes-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      map.current?.addLayer({
+      mapInstance?.addLayer({
         id: 'routes-layer',
         type: 'line',
         source: 'routes-source',
@@ -137,7 +154,7 @@ export const MapView = () => {
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current.clear();
-      map.current?.remove();
+      mapInstance.remove();
       map.current = null;
     };
   }, []);
@@ -146,7 +163,7 @@ export const MapView = () => {
   useEffect(() => {
     if (!token) return;
 
-    fetch(`http://localhost:3000/location/active`, {
+    fetch(`${API_URL}/location/active`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -177,7 +194,7 @@ export const MapView = () => {
       })
       .catch((err) => console.error('Error al obtener la ruta activa:', err));
 
-    const socket = io('http://localhost:3000', { auth: { token } });
+    const socket = io(`${API_URL}`, { auth: { token } });
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));

@@ -61,9 +61,10 @@ export const DriverPanel = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
 
   const simulationIntervalRef = useRef<number | null>(null);
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
-    const newSocket = io('http://localhost:3000', { auth: { token } });
+    const newSocket = io(`${API_URL}`, { auth: { token } });
     setSocket(newSocket);
 
     return () => {

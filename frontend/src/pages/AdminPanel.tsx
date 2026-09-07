@@ -32,41 +32,42 @@ interface RouteItem {
 }
 
 export const AdminPanel = () => {
-    const { token, user, logout } = useAuth();
-    const [activeTab, setActiveTab] = useState<'users' | 'routes'>('users');
-    const [users, setUsers] = useState<UserItem[]>([]);
-    const [routes, setRoutes] = useState<RouteItem[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
-    // Estado para la ventana modal de rastreo de ruta
-    const [selectedRouteForTracking, setSelectedRouteForTracking] = useState<RouteItem | null>(null);
-    // Estado para la edición en línea de usuarios
-    const [editingId, setEditingId] = useState<number | null>(null);
-    const [editForm, setEditForm] = useState<{
-      name: string;
-      cedula: string;
-      email: string;
-      role: UserItem['role'];
-    }>({ name: '', cedula: '', email: '', role: 'DRIVER' });
+  const { token, user, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<'users' | 'routes'>('users');
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [routes, setRoutes] = useState<RouteItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  // Estado para la ventana modal de rastreo de ruta
+  const [selectedRouteForTracking, setSelectedRouteForTracking] = useState<RouteItem | null>(null);
+  // Estado para la edición en línea de usuarios
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    cedula: string;
+    email: string;
+    role: UserItem['role'];
+  }>({ name: '', cedula: '', email: '', role: 'DRIVER' });
 
-    // Estado para la ventana modal de edición de rutas
-    const [selectedRouteForEditing, setSelectedRouteForEditing] = useState<RouteItem | null>(null);
-    const [routeEditForm, setRouteEditForm] = useState<{
-      identity: string;
-      name: string;
-      description: string;
-      driverId: number | null;
-      isActive: boolean;
-    }>({
-      identity: '',
-      name: '',
-      description: '',
-      driverId: null,
-      isActive: true,
-    });
+  // Estado para la ventana modal de edición de rutas
+  const [selectedRouteForEditing, setSelectedRouteForEditing] = useState<RouteItem | null>(null);
+  const [routeEditForm, setRouteEditForm] = useState<{
+    identity: string;
+    name: string;
+    description: string;
+    driverId: number | null;
+    isActive: boolean;
+  }>({
+    identity: '',
+    name: '',
+    description: '',
+    driverId: null,
+    isActive: true,
+  });
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-    const fetchUsers = async () => {
+  const fetchUsers = async () => {
     try {
-      const res = await fetch('http://localhost:3000/admin/users', {
+      const res = await fetch(`${API_URL}/admin/users`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -78,7 +79,7 @@ export const AdminPanel = () => {
 
   const fetchRoutes = async () => {
     try {
-      const res = await fetch('http://localhost:3000/admin/routes', {
+      const res = await fetch(`${API_URL}/admin/routes`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -109,7 +110,7 @@ export const AdminPanel = () => {
 
   const handleSaveUser = async (userId: number) => {
     try {
-      const res = await fetch(`http://localhost:3000/admin/users/${userId}`, {
+      const res = await fetch(`${API_URL}/admin/users/${userId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -138,7 +139,7 @@ export const AdminPanel = () => {
     if (!confirmDelete) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/admin/users/${u.id}`, {
+      const res = await fetch(`${API_URL}/admin/users/${u.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -170,7 +171,7 @@ export const AdminPanel = () => {
     if (!selectedRouteForEditing) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/admin/routes/${selectedRouteForEditing.id}`, {
+      const res = await fetch(`${API_URL}/admin/routes/${selectedRouteForEditing.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -199,7 +200,7 @@ export const AdminPanel = () => {
     if (!confirmDelete) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/admin/routes/${r.id}`, {
+      const res = await fetch(`${API_URL}/admin/routes/${r.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
