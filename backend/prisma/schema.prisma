@@ -9,35 +9,47 @@ datasource db {
 enum Role {
   ADMIN
   DRIVER
-  PASSENGER
+  SUPERVISOR
+  ROOT
+  OTHER
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        Int      @id @default(autoincrement())
+  cedula    String   @unique
   email     String   @unique
   password  String
+  Visible   Int      @default(1)
   name      String
-  role      Role     @default(PASSENGER)
+  role      Role     @default(DRIVER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   routes    Route[]
 }
 
 model Route {
-  id          String            @id @default(uuid())
+  id          Int               @id @default(autoincrement())
+  identity    String            @default(uuid())
   name        String
   description String?
   isActive    Boolean           @default(true)
-  driverId    String?
-  driver      User?             @relation(fields: [driverId], references: [id])
+  Visible     Int               @default(1)
+  driverId    Int
+  driver      User              @relation(fields: [driverId], references: [id])
   positions   VehiclePosition[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  // Evita que un mismo conductor cree 2 rutas al mismo tiempo exacto
+  @@unique([driverId, createdAt])
+  @@unique([identity, name])
 }
 
 model VehiclePosition {
-  id        String   @id @default(uuid())
-  routeId   String
+  id        Int      @id @default(autoincrement())
+  identity  String   @unique @default(uuid())
+  routeId   Int
+  Visible   Int      @default(1)
   route     Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
   lat       Float
   lng       Float
