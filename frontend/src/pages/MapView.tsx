@@ -4,6 +4,12 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '../context/AuthContext';
 
+const maplibre = maplibregl as any;
+if (maplibre.config) {
+  maplibre.config.WORKER_URL = '/maplibre-gl-worker.mjs';
+}
+maplibre.workerUrl = '/maplibre-gl-worker.mjs';
+
 interface IncomingLocation {
   driverId: number;
   driverName: string;
