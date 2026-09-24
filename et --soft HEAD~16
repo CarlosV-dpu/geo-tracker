@@ -1,0 +1,16 @@
+[33mc021fc9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m feat: assign maplibre workerUrl via local reference to bypass ESM immutability
+[33m2aa7bf7[m feat: copy maplibre worker and shared mjs files to public folder
+[33m9f32ce7[m feat: remove vite alias and set maplibre workerUrl explicitly
+[33ma3f9058[m feat: resolve maplibre-gl alias using absolute path with fileURLToPath
+[33m35d3881[m fieat: use exact regex matching for maplibre-gl alias in vite
+[33m0bcd266[m feat: alias maplibre-gl to UMD bundle to inline web worker
+[33mb789f7f[m feat: add vite plugin to auto-copy maplibre worker to dist assets
+[33m2a3cd7c[m feat: patch package vulnerabilities via npm audit fix
+[33m2ecd7fa[m feat: add base href in index.html for correct worker path resolution
+[33m8cd9c6e[m fix: add .js extension to maplibre csp worker import
+[33m8098e97[m fix: resolve ts(1192) and workerClass assignment using local reference
+[33mccc1a4d[m feat: embed maplibre web worker directly via Vite worker import
+[33m87e55d9[m feat: resolving trivialities 4
+[33ma265a67[m feat: resolving trivialities 3
+[33m51522f0[m feat: resolving trivialities 2
+[33mfe518a4[m feat: resolving trivialities

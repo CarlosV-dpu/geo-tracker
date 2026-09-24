@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '../context/AuthContext';
+import { AiAssistantDrawer } from '../components/AiAssistantDrawer';
 
 const maplibre = maplibregl as any;
 if (maplibre.config) {
@@ -548,7 +549,7 @@ export const MapView = () => {
           </div>
         </div>
       )}
-
+      <AiAssistantDrawer />
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>
   );

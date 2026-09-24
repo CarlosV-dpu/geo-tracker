@@ -3,26 +3,10 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { DriverPanel } from './pages/DriverPanel';
 import { AdminPanel } from './pages/AdminPanel';
-import { MapView } from './pages/MapView'; // 👈 Se mantiene tu archivo MapView4
+import { MapView } from './pages/MapView'; 
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const AppRouter = () => {
-
-  {/*
-    const { user, token } = useAuth();
-    if (!token) {
-      return (
-        <Routes>
-          { 1. Ruta Pública para Iniciar Sesión y Registrarse }
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          { 5. Redirección por defecto si el usuario escribe cualquier otra URL }
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      );
-    }*/
-  }
-  
 
   return (
     <Routes>

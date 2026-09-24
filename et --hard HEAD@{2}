@@ -1,0 +1,38 @@
+[33m66cb387[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{0}: commit: feat: (frontend): resolve maplibre web worker MIME type issue on render
+[33mc05dddc[m HEAD@{1}: reset: moving to HEAD~13
+[33m166d919[m HEAD@{2}: reset: moving to HEAD~16
+[33mc021fc9[m HEAD@{3}: commit: feat: assign maplibre workerUrl via local reference to bypass ESM immutability
+[33m2aa7bf7[m HEAD@{4}: commit: feat: copy maplibre worker and shared mjs files to public folder
+[33m9f32ce7[m HEAD@{5}: commit: feat: remove vite alias and set maplibre workerUrl explicitly
+[33ma3f9058[m HEAD@{6}: commit: feat: resolve maplibre-gl alias using absolute path with fileURLToPath
+[33m35d3881[m HEAD@{7}: commit: fieat: use exact regex matching for maplibre-gl alias in vite
+[33m0bcd266[m HEAD@{8}: commit: feat: alias maplibre-gl to UMD bundle to inline web worker
+[33mb789f7f[m HEAD@{9}: commit: feat: add vite plugin to auto-copy maplibre worker to dist assets
+[33m2a3cd7c[m HEAD@{10}: commit: feat: patch package vulnerabilities via npm audit fix
+[33m2ecd7fa[m HEAD@{11}: commit: feat: add base href in index.html for correct worker path resolution
+[33m8cd9c6e[m HEAD@{12}: commit: fix: add .js extension to maplibre csp worker import
+[33m8098e97[m HEAD@{13}: commit: fix: resolve ts(1192) and workerClass assignment using local reference
+[33mccc1a4d[m HEAD@{14}: commit: feat: embed maplibre web worker directly via Vite worker import
+[33m87e55d9[m HEAD@{15}: commit: feat: resolving trivialities 4
+[33ma265a67[m HEAD@{16}: commit: feat: resolving trivialities 3
+[33m51522f0[m HEAD@{17}: commit: feat: resolving trivialities 2
+[33mfe518a4[m HEAD@{18}: commit: feat: resolving trivialities
+[33m166d919[m HEAD@{19}: commit: feat: backend and frontend Render
+[33mfc42c3a[m HEAD@{20}: commit: feat: configuracion de Swagger, CI workflow y conexion a Neon DB
+[33m876e57b[m HEAD@{21}: commit: feat: include the Prisma migrations folder
+[33m183c4ab[m HEAD@{22}: commit: feat: Final corrections, code complete
+[33m2f3ecc4[m HEAD@{23}: commit: feat: New AdminPanel (SCRUD) with tables route history and user
+[33m78a1227[m HEAD@{24}: commit: feat: dynamic mapView with multiple drivers
+[33m4f4a65d[m HEAD@{25}: commit: feat: Upgrade DriverPanel Simulator, and MapView (fixed)
+[33mdac6a1c[m HEAD@{26}: commit: feat: Upgrade DriverPanel Simulator, and MapView
+[33m7a0bc26[m HEAD@{27}: commit: feat: DriverPanel and DataBase Fixed
+[33mbeb87c7[m HEAD@{28}: commit: feat: new Login, Register and auth fixed
+[33m259feb6[m HEAD@{29}: commit: logro: migracion a MapLibre GL con soporte vectorial y OSRM, 2 NUEVOS SIMULADORES, DETALLES VISUALES MODIFICADOS
+[33mb7cf8bc[m HEAD@{30}: checkout: moving from main to main
+[33mb7cf8bc[m HEAD@{31}: checkout: moving from main to main
+[33mb7cf8bc[m HEAD@{32}: commit: logo: add real-time polyline trajectory, telemetry dashboard and simulator script
+[33mcfbe506[m HEAD@{33}: commit: logro: add react frontend with leaflet map and socket.io integration
+[33mc05dddc[m HEAD@{34}: commit: logro: implement location websocket gateway with socket.io
+[33m9f6dcdc[m HEAD@{35}: Branch: renamed refs/heads/main to refs/heads/main
+[33m9f6dcdc[m HEAD@{37}: Branch: renamed refs/heads/master to refs/heads/main
+[33m9f6dcdc[m HEAD@{39}: commit (initial): fase inicial: setup docker, nestjs, prisma y websocket gateway
