@@ -71,7 +71,7 @@ Responde de manera profesional, concisa y estructurada. Si necesitas datos de la
     try {
       // 2. Primera llamada al modelo con el prompt del usuario y las tools
         const response = await this.openai.chat.completions.create({
-        model: 'llama-3.3-70b-versatile', // Modelo eficiente y de bajo costo
+        model: 'llama-3.1-70b-versatile', // Modelo eficiente y de bajo costo
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -129,7 +129,7 @@ Responde de manera profesional, concisa y estructurada. Si necesitas datos de la
 
         // 5. Enviar el resultado de vuelta al LLM
         const finalResponse = await this.openai.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-70b-versatile',
           messages: messagesHistory,
         });
 
