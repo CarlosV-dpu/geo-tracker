@@ -29,7 +29,7 @@ export class AiAnalyticsService {
 
   async processUserQuery(userPrompt: string) {
     // 1. Definición de herramientas que la IA puede invocar de forma segura
-    const MODEL_NAME = 'llama-3.3-70b-versatile'
+    const MODEL_NAME = 'llama3-70b-8192'
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       {
         type: 'function',
