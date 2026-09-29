@@ -17,16 +17,19 @@ export class AiAnalyticsService {
     
     if (!apiKey) {
       this.logger.warn('GROQ_API_KEY no está definida en las variables de entorno.');
+      this.logger.error('CRÍTICO: GROQ_API_KEY no está definida en Render o .env');
+      throw new InternalServerErrorException('CRÍTICO: GROQ_API_KEY no está definida en Render o .env');
     }
 
     this.openai = new OpenAI({
-      apiKey: apiKey || 'dummy-key',
+      apiKey: apiKey || '',
       baseURL: 'https://api.groq.com/openai/v1',
     });
   }
 
   async processUserQuery(userPrompt: string) {
     // 1. Definición de herramientas que la IA puede invocar de forma segura
+    const MODEL_NAME = 'llama-3.1-8b-instant'
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       {
         type: 'function',
@@ -71,7 +74,7 @@ Responde de manera profesional, concisa y estructurada. Si necesitas datos de la
     try {
       // 2. Primera llamada al modelo con el prompt del usuario y las tools
         const response = await this.openai.chat.completions.create({
-        model: 'llama-3.1-8b-instant', // Modelo eficiente y de bajo costo
+        model: MODEL_NAME, // Modelo eficiente y de bajo costo
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -129,7 +132,7 @@ Responde de manera profesional, concisa y estructurada. Si necesitas datos de la
 
         // 5. Enviar el resultado de vuelta al LLM
         const finalResponse = await this.openai.chat.completions.create({
-          model: 'llama-3.1-8b-instant',
+          model: MODEL_NAME,
           messages: messagesHistory,
         });
 
