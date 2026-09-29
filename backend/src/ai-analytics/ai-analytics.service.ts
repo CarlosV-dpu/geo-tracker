@@ -16,9 +16,7 @@ export class AiAnalyticsService {
     const apiKey = this.configService.get<string>('GROQ_API_KEY');
     
     if (!apiKey) {
-      this.logger.warn('GROQ_API_KEY no está definida en las variables de entorno.');
-      this.logger.error('CRÍTICO: GROQ_API_KEY no está definida en Render o .env');
-      throw new InternalServerErrorException('CRÍTICO: GROQ_API_KEY no está definida en Render o .env');
+      this.logger.error('GROQ_API_KEY no está definida en las variables de entorno.');
     }
 
     this.openai = new OpenAI({
@@ -136,20 +134,28 @@ Responde de manera profesional, concisa y estructurada. Si necesitas datos de la
           messages: messagesHistory,
         });
 
+        const replyText = finalResponse.choices[0]?.message?.content || 
+                          'Se procesaron los datos de la flota correctamente.';
+
         return {
-          textResponse: finalResponse.choices[0].message.content,
+          textResponse: replyText,
+          message: replyText,   // Alias para compatibilidad con el frontend
+          response: replyText,  // Alias para compatibilidad con el frontend
           dataPayload: lastDataPayload,
           toolUsed: lastToolUsed,
         };
       }
 
+      const directReplyText = responseMessage.content || 'Sin respuesta detallada.';
     // Si no requirió herramientas, responder directamente
     return {
-        textResponse: responseMessage.content,
+        textResponse: directReplyText,
+        message: directReplyText,   // Alias para el frontend
+        response: directReplyText,  // Alias para el frontend
         dataPayload: null,
         toolUsed: null,
       };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Error procesando consulta de IA', error);
       throw new InternalServerErrorException('Error al procesar la solicitud con el asistente de IA.');
     }
